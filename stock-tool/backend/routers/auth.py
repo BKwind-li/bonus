@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from config import settings
 
 router = APIRouter()
-bearer = HTTPBearer()
+bearer = HTTPBearer(auto_error=False)
 
 
 class LoginRequest(BaseModel):
@@ -18,7 +18,9 @@ def create_token() -> str:
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
 
-async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+async def require_auth(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Missing authentication")
     try:
         jwt.decode(credentials.credentials, settings.secret_key, algorithms=["HS256"])
     except JWTError:
