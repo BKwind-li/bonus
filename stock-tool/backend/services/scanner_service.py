@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from models import SignalResult
 from services.data_fetcher import fetch_ohlcv, OHLCVData
 from services.indicator_engine import calculate_indicators
@@ -30,7 +30,7 @@ def build_signal_result(
         change_pct=ohlcv.change_pct,
         short_term=short_term,
         long_term=long_term,
-        scanned_at=datetime.utcnow(),
+        scanned_at=datetime.now(timezone.utc),
     )
 
 

@@ -1,6 +1,6 @@
 import aiosmtplib
 from email.mime.text import MIMEText
-from datetime import datetime
+from datetime import datetime, timezone
 from config import settings
 from database import get_db
 
@@ -122,7 +122,7 @@ async def check_signal_alerts(
                 new_short_score,
                 new_long_score,
                 rsi_daily,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         await db.commit()
