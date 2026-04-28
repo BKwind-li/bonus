@@ -18,7 +18,12 @@ def start_scheduler():
     - FX market: every 4 hours (24-hour market)
     Note: both triggers fire run_full_scan; scanning is universe-wide.
     """
-    scheduler.add_job(_scheduled_scan, CronTrigger(hour=21, minute=5), id="stock_scan", replace_existing=True)
+    scheduler.add_job(
+        _scheduled_scan,
+        CronTrigger(day_of_week="mon-fri", hour=21, minute=5),
+        id="stock_scan",
+        replace_existing=True,
+    )
     scheduler.add_job(_scheduled_scan, CronTrigger(hour="0,4,8,12,16,20"), id="fx_scan", replace_existing=True)
     scheduler.start()
 

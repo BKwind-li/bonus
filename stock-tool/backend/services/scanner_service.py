@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from models import SignalResult
@@ -53,38 +54,43 @@ async def run_full_scan(db) -> int:
     count = 0
     for item in tickers:
         ticker = item["ticker"]
-        market = "forex" if is_forex(ticker) else "stock"
-        result = scan_single(ticker, item["name"], item["sector"], market)
-        if result is None:
+        try:
+            market = "forex" if is_forex(ticker) else "stock"
+            result = await asyncio.to_thread(
+                scan_single, ticker, item["name"], item["sector"], market
+            )
+            if result is None:
+                continue
+            await db.execute(
+                """
+                INSERT OR REPLACE INTO scan_results
+                (ticker, name, sector, market, price, change_pct,
+                 short_score, short_label, short_color,
+                 long_score, long_label, long_color,
+                 short_indicators, long_indicators, scanned_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    result.ticker, result.name, result.sector, result.market,
+                    result.price, result.change_pct,
+                    result.short_term.score, result.short_term.label, result.short_term.color,
+                    result.long_term.score, result.long_term.label, result.long_term.color,
+                    json.dumps([i.model_dump() for i in result.short_term.indicators]),
+                    json.dumps([i.model_dump() for i in result.long_term.indicators]),
+                    result.scanned_at.isoformat(),
+                ),
+            )
+            rsi_raw = next(
+                (float(ind.raw_value) for ind in result.short_term.indicators if ind.name == "RSI(14)"),
+                50.0,
+            )
+            await check_price_alerts(ticker, result.price)
+            await check_signal_alerts(
+                ticker, result.short_term.score, result.long_term.score, rsi_raw
+            )
+            count += 1
+        except Exception as exc:
+            print(f"[Scanner] {ticker} failed: {exc}")
             continue
-        await db.execute(
-            """
-            INSERT OR REPLACE INTO scan_results
-            (ticker, name, sector, market, price, change_pct,
-             short_score, short_label, short_color,
-             long_score, long_label, long_color,
-             short_indicators, long_indicators, scanned_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                result.ticker, result.name, result.sector, result.market,
-                result.price, result.change_pct,
-                result.short_term.score, result.short_term.label, result.short_term.color,
-                result.long_term.score, result.long_term.label, result.long_term.color,
-                json.dumps([i.model_dump() for i in result.short_term.indicators]),
-                json.dumps([i.model_dump() for i in result.long_term.indicators]),
-                result.scanned_at.isoformat(),
-            ),
-        )
-        # Extract daily RSI from short-term indicators for alert check
-        rsi_raw = next(
-            (float(ind.raw_value) for ind in result.short_term.indicators if ind.name == "RSI(14)"),
-            50.0,
-        )
-        await check_price_alerts(ticker, result.price)
-        await check_signal_alerts(
-            ticker, result.short_term.score, result.long_term.score, rsi_raw
-        )
-        count += 1
     await db.commit()
     return count
