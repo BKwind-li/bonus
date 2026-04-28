@@ -37,6 +37,26 @@ def test_score_to_label_strong_bearish():
     assert label == "强烈看跌"
     assert color == "red"
 
+def test_score_to_label_score_3_is_strong_bullish():
+    label, color = score_to_label(3)
+    assert label == "强烈看涨"
+    assert color == "green"
+
+def test_score_to_label_score_1_is_bullish():
+    label, color = score_to_label(1)
+    assert label == "看涨信号"
+    assert color == "green"
+
+def test_score_to_label_score_minus_1_is_bearish():
+    label, color = score_to_label(-1)
+    assert label == "看跌信号"
+    assert color == "red"
+
+def test_score_to_label_score_minus_3_is_strong_bearish():
+    label, color = score_to_label(-3)
+    assert label == "强烈看跌"
+    assert color == "red"
+
 def test_short_term_all_bullish():
     vals = _make_vals(
         ema_20=105, ema_50=100, rsi_daily=60,
