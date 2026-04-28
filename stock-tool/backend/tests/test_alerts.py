@@ -1,21 +1,7 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from main import app
-from database import init_db, get_db
-
-
-@pytest.fixture(autouse=True)
-async def setup_db():
-    await init_db()
-    async with get_db() as db:
-        await db.execute("DELETE FROM watchlist")
-        await db.execute("DELETE FROM scan_results")
-        await db.execute("DELETE FROM price_alerts")
-        await db.execute("DELETE FROM signal_alerts")
-        await db.execute("DELETE FROM alert_history")
-        await db.execute("DELETE FROM previous_signals")
-        await db.commit()
-    yield
+from database import get_db
 
 
 async def _get_token(client):
