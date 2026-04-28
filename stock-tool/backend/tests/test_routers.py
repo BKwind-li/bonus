@@ -1,13 +1,21 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from main import app
-from database import init_db
+from database import init_db, get_db
 
 
-@pytest.fixture(autouse=True, scope="module")
+@pytest.fixture(autouse=True)
 async def setup_db():
-    """Ensure DB tables exist before any router test runs."""
     await init_db()
+    async with get_db() as db:
+        await db.execute("DELETE FROM watchlist")
+        await db.execute("DELETE FROM scan_results")
+        await db.execute("DELETE FROM price_alerts")
+        await db.execute("DELETE FROM signal_alerts")
+        await db.execute("DELETE FROM alert_history")
+        await db.execute("DELETE FROM previous_signals")
+        await db.commit()
+    yield
 
 
 async def _get_token(client):
@@ -59,13 +67,42 @@ async def test_scanner_results_returns_list():
 
 @pytest.mark.asyncio
 async def test_scanner_results_filtering():
-    """Filter by market and signal type — should return list (possibly empty)."""
+    """Verify filter actually selects matching rows."""
+    async with get_db() as db:
+        # Insert one bullish stock and one bearish forex
+        await db.execute("""
+            INSERT INTO scan_results
+            (ticker, name, sector, market, price, change_pct,
+             short_score, short_label, short_color,
+             long_score, long_label, long_color,
+             short_indicators, long_indicators, scanned_at)
+            VALUES
+            ('AAPL', '苹果', 'IT', 'stock', 100, 1.0, 3, '强烈看涨', 'green', 2, '看涨信号', 'green', '[]', '[]', '2026-04-27T00:00:00'),
+            ('EURUSD=X', '欧美', 'FX', 'forex', 1.1, -0.1, -3, '强烈看跌', 'red', -2, '看跌信号', 'red', '[]', '[]', '2026-04-27T00:00:00')
+        """)
+        await db.commit()
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         token = await _get_token(client)
         headers = {"Authorization": f"Bearer {token}"}
-        r = await client.get("/scanner/results?market=stock&signal_type=bullish", headers=headers)
-        assert r.status_code == 200
-        assert isinstance(r.json(), list)
+
+        # Filter by market=stock should return only AAPL
+        r = await client.get("/scanner/results?market=stock", headers=headers)
+        tickers = [x["ticker"] for x in r.json()]
+        assert "AAPL" in tickers
+        assert "EURUSD=X" not in tickers
+
+        # Filter by signal_type=bullish should return only AAPL (positive scores)
+        r = await client.get("/scanner/results?signal_type=bullish", headers=headers)
+        tickers = [x["ticker"] for x in r.json()]
+        assert "AAPL" in tickers
+        assert "EURUSD=X" not in tickers
+
+        # Filter by signal_type=bearish should return only EURUSD=X
+        r = await client.get("/scanner/results?signal_type=bearish", headers=headers)
+        tickers = [x["ticker"] for x in r.json()]
+        assert "EURUSD=X" in tickers
+        assert "AAPL" not in tickers
 
 
 @pytest.mark.asyncio

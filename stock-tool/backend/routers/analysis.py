@@ -1,3 +1,6 @@
+import asyncio
+
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from routers.auth import require_auth
 from services.data_fetcher import fetch_ohlcv
@@ -14,7 +17,7 @@ async def get_analysis(ticker: str, _=Depends(require_auth)):
     info = get_ticker_info(ticker)
     if info is None:
         raise HTTPException(status_code=404, detail="Ticker not found in universe")
-    ohlcv = fetch_ohlcv(ticker)
+    ohlcv = await asyncio.to_thread(fetch_ohlcv, ticker)
     if ohlcv is None:
         raise HTTPException(status_code=503, detail="Failed to fetch market data")
     market = "forex" if is_forex(ticker) else "stock"
@@ -39,7 +42,7 @@ async def deep_analysis(ticker: str, _=Depends(require_auth)):
     info = get_ticker_info(ticker)
     if info is None:
         raise HTTPException(status_code=404, detail="Ticker not found")
-    ohlcv = fetch_ohlcv(ticker)
+    ohlcv = await asyncio.to_thread(fetch_ohlcv, ticker)
     if ohlcv is None:
         raise HTTPException(status_code=503, detail="Failed to fetch market data")
 
@@ -60,11 +63,16 @@ async def deep_analysis(ticker: str, _=Depends(require_auth)):
         f"请综合以上信息给出分析摘要，包含当前趋势判断和需要注意的风险。"
     )
 
-    import anthropic
     client = anthropic.Anthropic(api_key=settings.claude_api_key)
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=400,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return {"analysis": message.content[0].text}
+    try:
+        message = await asyncio.to_thread(
+            client.messages.create,
+            model="claude-sonnet-4-6",
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return {"analysis": message.content[0].text}
+    except anthropic.APIStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Claude API error: {e.status_code}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Claude API unavailable")
