@@ -165,6 +165,9 @@ services:
 - 多用户系统
 - 阿里云短信通知
 - Telegram Bot 通知
+- 集成资金账户操作API（如 Alpaca、Interactive Brokers）
+- AI 生成的投资建议作为默认路径（目前仅按需触发）
+- 更多技术指标（如布林带、ADX、OBV 等）
 
 ---
 
