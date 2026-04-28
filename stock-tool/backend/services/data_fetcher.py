@@ -65,6 +65,17 @@ def _fetch_via_yfinance(ticker: str, period_daily: str, period_weekly: str):
     return daily, weekly
 
 
+def _to_utc(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize a DataFrame's DatetimeIndex to UTC, regardless of source timezone."""
+    if df.empty:
+        return df
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    else:
+        df.index = df.index.tz_convert("UTC")
+    return df
+
+
 def fetch_ohlcv(ticker: str) -> "OHLCVData | None":
     """Fetch 6 months of daily and 2 years of weekly OHLCV for a ticker.
 
@@ -75,12 +86,20 @@ def fetch_ohlcv(ticker: str) -> "OHLCVData | None":
         daily = _fetch_via_query2(ticker, "1d", "6mo")
         weekly = _fetch_via_query2(ticker, "1wk", "2y")
 
-        # Fallback to yfinance if direct approach returned nothing
-        if daily.empty:
+        # Fallback to yfinance if either frame is missing (partial rate-limit / transient error)
+        if daily.empty or weekly.empty:
             try:
-                daily, weekly = _fetch_via_yfinance(ticker, "6mo", "2y")
+                daily_fb, weekly_fb = _fetch_via_yfinance(ticker, "6mo", "2y")
+                if daily.empty:
+                    daily = daily_fb
+                if weekly.empty:
+                    weekly = weekly_fb
             except Exception:
                 pass
+
+        # Normalize both indexes to UTC so pandas-ta operations align correctly
+        daily = _to_utc(daily)
+        weekly = _to_utc(weekly)
 
         if daily.empty or len(daily) < 5:
             return None
