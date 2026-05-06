@@ -40,6 +40,9 @@ async def clean_db():
         await db.execute("DELETE FROM signal_alerts")
         await db.execute("DELETE FROM alert_history")
         await db.execute("DELETE FROM previous_signals")
+        # Order matters: child tables (orders, positions, nav_history) reference
+        # accounts via FK. Always delete accounts LAST so future FK-pragma flips
+        # don't break test isolation.
         await db.execute("DELETE FROM orders")
         await db.execute("DELETE FROM positions")
         await db.execute("DELETE FROM nav_history")

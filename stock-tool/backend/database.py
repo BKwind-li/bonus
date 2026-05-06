@@ -123,7 +123,14 @@ async def init_db():
 
 
 async def _seed_default_account(db):
-    """Insert the default paper account if it does not yet exist."""
+    """Insert the default paper account if it does not yet exist.
+
+    Uses INSERT OR IGNORE keyed on the primary key id='default' so re-running
+    init_db() never resets cash_balance or any other field. Consequence: the
+    initial_cash and cash_balance values are FROZEN at first seed; changing
+    PAPER_INITIAL_CASH in .env after the DB is created has no effect unless
+    the database is reset (delete data.db).
+    """
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         """
