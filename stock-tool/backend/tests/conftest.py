@@ -31,7 +31,7 @@ import pytest
 @pytest.fixture(autouse=True)
 async def clean_db():
     """Initialize DB and clear all tables before each test."""
-    from database import init_db, get_db
+    from database import init_db, get_db, _seed_default_account
     await init_db()
     async with get_db() as db:
         await db.execute("DELETE FROM watchlist")
@@ -40,5 +40,11 @@ async def clean_db():
         await db.execute("DELETE FROM signal_alerts")
         await db.execute("DELETE FROM alert_history")
         await db.execute("DELETE FROM previous_signals")
+        await db.execute("DELETE FROM orders")
+        await db.execute("DELETE FROM positions")
+        await db.execute("DELETE FROM nav_history")
+        await db.execute("DELETE FROM accounts")
         await db.commit()
+        # Re-seed default account so every test starts with a clean default account
+        await _seed_default_account(db)
     yield

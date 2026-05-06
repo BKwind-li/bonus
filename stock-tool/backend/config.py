@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     notify_email: str = ""
     claude_api_key: str = ""
     database_url: str = "./data.db"
+    paper_initial_cash: float = 100000.0
+    paper_fx_spread_pips: float = 0.5
 
 
 settings = Settings()
