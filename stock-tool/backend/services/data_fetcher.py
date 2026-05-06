@@ -117,3 +117,17 @@ def fetch_ohlcv(ticker: str) -> "OHLCVData | None":
         )
     except Exception:
         return None
+
+
+def fetch_current_price(ticker: str) -> float | None:
+    """Return the most recent closing price for *ticker*, or None on failure.
+
+    Thin wrapper around :func:`fetch_ohlcv` for use by the broker adapter
+    and any other caller that only needs a single float rather than the full
+    OHLCV frame.  The result is injected into :class:`~brokers.paper.PaperBrokerAdapter`
+    as ``price_fetcher`` so tests can monkeypatch without touching the network.
+    """
+    data = fetch_ohlcv(ticker)
+    if data is None:
+        return None
+    return data.current_price
