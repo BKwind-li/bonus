@@ -2,6 +2,7 @@
 and PaperBrokerAdapter behaviour tests (Task 3).
 """
 import pytest
+from pydantic import ValidationError
 from database import init_db, get_db
 from config import settings
 
@@ -440,7 +441,7 @@ async def test_cancel_unknown_order_raises():
 @pytest.mark.asyncio
 async def test_invalid_order_qty_zero_raises():
     """qty <= 0 is rejected by pydantic Field(gt=0) before adapter sees it."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         # Pydantic Field(gt=0) will reject this
         OrderRequest(ticker="AAPL", side="buy", order_type="market", qty=0)
 
