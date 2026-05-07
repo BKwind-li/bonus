@@ -23,6 +23,7 @@ from brokers.base import (
     OrderNotFoundError,
 )
 from brokers.paper import PaperBrokerAdapter
+from brokers.registry import paper_adapter
 from database import get_db
 from models import AccountInfo, Order, OrderRequest
 from routers.auth import require_auth
@@ -33,16 +34,18 @@ router = APIRouter()
 # Module-level default adapter (tests override via get_adapter dependency)
 # ---------------------------------------------------------------------------
 
-_adapter = PaperBrokerAdapter()  # default price_fetcher = data_fetcher.fetch_current_price
+# Keep the private alias for backward compatibility with any code that
+# imports `_adapter` from this module directly.
+_adapter = paper_adapter
 
 
 def get_adapter() -> PaperBrokerAdapter:
-    """Return the module-level adapter instance.
+    """Return the shared singleton adapter instance.
 
     Override in tests:
         app.dependency_overrides[portfolio.get_adapter] = lambda: fake_adapter
     """
-    return _adapter
+    return paper_adapter
 
 
 # ---------------------------------------------------------------------------
