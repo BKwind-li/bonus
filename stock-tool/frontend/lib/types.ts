@@ -105,7 +105,7 @@ export interface Order {
   order_type: "market" | "limit"
   qty: number
   limit_price?: number
-  status: "pending" | "filled" | "cancelled" | "rejected"
+  status: "pending" | "queued" | "filled" | "cancelled" | "rejected"
   filled_price?: number
   filled_at?: string
   created_at: string

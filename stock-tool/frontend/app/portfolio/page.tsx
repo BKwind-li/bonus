@@ -6,6 +6,7 @@ import type { Account, Position, NavPoint } from "@/lib/types"
 import PortfolioSummary from "@/components/PortfolioSummary"
 import NavChart from "@/components/NavChart"
 import PositionCard from "@/components/PositionCard"
+import PortfolioTabs from "@/components/PortfolioTabs"
 
 export default function PortfolioPage() {
   const [account, setAccount] = useState<Account | null>(null)
@@ -80,6 +81,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6">
+      <PortfolioTabs />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">持仓总览</h1>
         <span className="text-xs text-zinc-500">虚拟账户 · default</span>
