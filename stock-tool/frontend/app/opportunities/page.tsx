@@ -34,15 +34,39 @@ export default function OpportunitiesPage() {
   useEffect(() => { loadResults() }, [loadResults])
 
   async function handleTriggerScan() {
+    // The backend scan runs as a BackgroundTask and takes several minutes
+    // (yfinance latency × ~58 tickers). Poll last_scan_time until it advances
+    // past the value we recorded before triggering, then refresh results.
     setScanning(true)
     setScanStarted(false)
+    const before = lastScan
     await api.triggerScan()
     setScanStarted(true)
-    setTimeout(() => {
-      setScanning(false)
-      setScanStarted(false)
-      loadResults()
-    }, 3000)
+
+    const startedAt = Date.now()
+    const TIMEOUT_MS = 8 * 60 * 1000   // 8 min cap
+    const POLL_MS = 10 * 1000          // 10 s
+
+    const poll = async (): Promise<void> => {
+      if (Date.now() - startedAt > TIMEOUT_MS) {
+        setScanning(false)
+        setScanStarted(false)
+        return
+      }
+      try {
+        const t = await api.getLastScanTime()
+        if (t.last_scan && t.last_scan !== before) {
+          await loadResults()
+          setScanning(false)
+          setScanStarted(false)
+          return
+        }
+      } catch {
+        /* swallow transient errors and try again */
+      }
+      setTimeout(poll, POLL_MS)
+    }
+    setTimeout(poll, POLL_MS)
   }
 
   function handleFilterChange(key: string, value: string) {
@@ -71,7 +95,7 @@ export default function OpportunitiesPage() {
 
       {scanStarted && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-zinc-800 text-sm text-zinc-300">
-          扫描已开始，结果将在数分钟后更新
+          扫描进行中（约 3-5 分钟）— 完成后会自动刷新。可继续浏览其他页面。
         </div>
       )}
 

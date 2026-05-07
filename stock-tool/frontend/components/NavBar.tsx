@@ -16,9 +16,16 @@ export default function NavBar() {
   const pathname = usePathname()
   const [unread, setUnread] = useState(0)
 
+  // Don't render or fetch on the login page — there's no token, so getUnreadCount
+  // would 401 and bounce the user back to /login, creating an infinite loop.
+  const isAuthPage = pathname === "/login"
+
   useEffect(() => {
+    if (isAuthPage) return
     api.getUnreadCount().then((r) => setUnread(r.count)).catch(() => {})
-  }, [pathname])
+  }, [pathname, isAuthPage])
+
+  if (isAuthPage) return null
 
   return (
     <nav className="sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
