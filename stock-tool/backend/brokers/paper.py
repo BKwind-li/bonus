@@ -5,8 +5,6 @@ project's aiosqlite-backed database.  All mutating methods wrap their DB
 work in an explicit ``BEGIN … COMMIT`` transaction and roll back on error.
 
 Out-of-scope items (deferred to later tasks):
-- Market-hours checking and closed-market queuing (Task 4 / Task 5)
-- Limit-order matching / triggering (Task 5)
 - NAV snapshot recording (Task 6)
 """
 
@@ -27,10 +25,95 @@ from config import settings
 from data.universe import is_forex
 from database import get_db
 from models import AccountInfo, Order, OrderRequest, Position
+from services.market_hours import should_queue_order
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _apply_fill_buy(
+    db,
+    account_id: str,
+    ticker: str,
+    qty: float,
+    fill_price: float,
+    now: str,
+) -> None:
+    """Apply the cash/position mutation for a BUY fill inside an open transaction.
+
+    Decrements cash by ``qty * fill_price`` and upserts the position using a
+    weighted-average cost calculation.  Must be called within a BEGIN/COMMIT
+    block managed by the caller.
+
+    Does NOT insert an orders row — the caller is responsible for that.
+    """
+    total_cost = fill_price * qty
+
+    # 1. Decrement cash
+    await db.execute(
+        "UPDATE accounts SET cash_balance = cash_balance - ? WHERE id = ?",
+        (total_cost, account_id),
+    )
+
+    # 2. Upsert position (weighted-average cost)
+    async with db.execute(
+        "SELECT qty, avg_cost FROM positions WHERE account_id = ? AND ticker = ?",
+        (account_id, ticker),
+    ) as cur:
+        pos_row = await cur.fetchone()
+
+    if pos_row is None:
+        await db.execute(
+            "INSERT INTO positions (account_id, ticker, qty, avg_cost, opened_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (account_id, ticker, qty, fill_price, now),
+        )
+    else:
+        old_qty = pos_row["qty"]
+        old_avg = pos_row["avg_cost"]
+        new_qty = old_qty + qty
+        new_avg = (old_qty * old_avg + qty * fill_price) / new_qty
+        await db.execute(
+            "UPDATE positions SET qty = ?, avg_cost = ? WHERE account_id = ? AND ticker = ?",
+            (new_qty, new_avg, account_id, ticker),
+        )
+
+
+async def _apply_fill_sell(
+    db,
+    account_id: str,
+    ticker: str,
+    qty: float,
+    current_held_qty: float,
+    total_proceeds: float,
+    now: str,  # noqa: ARG001  (unused but kept for API symmetry with _apply_fill_buy)
+) -> None:
+    """Apply the cash/position mutation for a SELL fill inside an open transaction.
+
+    Increments cash by ``total_proceeds`` and decrements (or removes) the position.
+    ``current_held_qty`` must be the qty already verified to be >= qty by the caller.
+
+    Does NOT insert an orders row — the caller is responsible for that.
+    """
+    # 1. Increment cash
+    await db.execute(
+        "UPDATE accounts SET cash_balance = cash_balance + ? WHERE id = ?",
+        (total_proceeds, account_id),
+    )
+
+    # 2. Decrement (or delete) position
+    new_qty = current_held_qty - qty
+    if new_qty < 1e-9:
+        await db.execute(
+            "DELETE FROM positions WHERE account_id = ? AND ticker = ?",
+            (account_id, ticker),
+        )
+    else:
+        await db.execute(
+            "UPDATE positions SET qty = ? WHERE account_id = ? AND ticker = ?",
+            (new_qty, account_id, ticker),
+        )
 
 
 def _row_to_order(row) -> Order:
@@ -67,15 +150,26 @@ class PaperBrokerAdapter:
         A *synchronous* callable ``(ticker: str) -> float | None``.
         Defaults to :func:`~services.data_fetcher.fetch_current_price`.
         Inject a lambda / mock in tests so no real network calls are made.
+    now_provider:
+        A zero-argument callable returning the current :class:`~datetime.datetime`
+        (timezone-aware).  Defaults to ``lambda: datetime.now(timezone.utc)``.
+        Inject a deterministic value in tests to control market-hours behaviour.
     """
 
     name = "paper"
 
-    def __init__(self, price_fetcher: Callable[[str], float | None] | None = None):
+    def __init__(
+        self,
+        price_fetcher: Callable[[str], float | None] | None = None,
+        now_provider: Callable[[], datetime] | None = None,
+    ):
         if price_fetcher is None:
             from services.data_fetcher import fetch_current_price
             price_fetcher = fetch_current_price
         self._price_fetcher = price_fetcher
+        if now_provider is None:
+            now_provider = lambda: datetime.now(timezone.utc)
+        self._now_provider = now_provider
 
     # ------------------------------------------------------------------ #
     # Read-only queries                                                    #
@@ -191,6 +285,40 @@ class PaperBrokerAdapter:
         ticker = request.ticker
         qty = request.qty
         side = request.side
+        now_dt = self._now_provider()
+
+        # ── closed-market check: queue stocks when market is closed ──────
+        if should_queue_order(ticker, now_dt):
+            # Insert a queued order without fetching price or mutating cash/positions
+            now = now_dt.isoformat()
+            order_id = uuid.uuid4().hex
+            snap = signal_snapshot or {}
+            async with get_db() as db:
+                await db.execute("BEGIN")
+                try:
+                    await db.execute(
+                        """
+                        INSERT INTO orders (
+                            id, account_id, ticker, side, order_type, qty,
+                            limit_price, status, fill_price, fill_qty, fee,
+                            signal_label_short, signal_score_short,
+                            signal_label_long, signal_score_long,
+                            triggered_by, created_at, filled_at, cancelled_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            order_id, account_id, ticker, side, "market", qty,
+                            None, "queued", None, None, 0.0,
+                            snap.get("label_short"), snap.get("score_short"),
+                            snap.get("label_long"), snap.get("score_long"),
+                            request.triggered_by, now, None, None,
+                        ),
+                    )
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+                    raise
+            return await self._fetch_order(account_id, order_id)
 
         # ── price lookup ────────────────────────────────────────────────
         mid_price = self._price_fetcher(ticker)
@@ -257,40 +385,9 @@ class PaperBrokerAdapter:
         async with get_db() as db:
             await db.execute("BEGIN")
             try:
-                # 1. Decrement cash
-                await db.execute(
-                    "UPDATE accounts SET cash_balance = cash_balance - ? WHERE id = ?",
-                    (total_cost, account_id),
-                )
+                await _apply_fill_buy(db, account_id, ticker, qty, fill_price, now)
 
-                # 2. Upsert position (weighted-average cost)
-                async with db.execute(
-                    "SELECT qty, avg_cost FROM positions WHERE account_id = ? AND ticker = ?",
-                    (account_id, ticker),
-                ) as cur:
-                    pos_row = await cur.fetchone()
-
-                if pos_row is None:
-                    # New position
-                    await db.execute(
-                        """
-                        INSERT INTO positions (account_id, ticker, qty, avg_cost, opened_at)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (account_id, ticker, qty, fill_price, now),
-                    )
-                else:
-                    old_qty = pos_row["qty"]
-                    old_avg = pos_row["avg_cost"]
-                    new_qty = old_qty + qty
-                    new_avg = (old_qty * old_avg + qty * fill_price) / new_qty
-                    await db.execute(
-                        "UPDATE positions SET qty = ?, avg_cost = ? "
-                        "WHERE account_id = ? AND ticker = ?",
-                        (new_qty, new_avg, account_id, ticker),
-                    )
-
-                # 3. Insert order record
+                # Insert order record
                 await db.execute(
                     """
                     INSERT INTO orders (
@@ -351,27 +448,9 @@ class PaperBrokerAdapter:
         async with get_db() as db:
             await db.execute("BEGIN")
             try:
-                # 1. Increment cash
-                await db.execute(
-                    "UPDATE accounts SET cash_balance = cash_balance + ? WHERE id = ?",
-                    (total_proceeds, account_id),
-                )
+                await _apply_fill_sell(db, account_id, ticker, qty, pos_row["qty"], total_proceeds, now)
 
-                # 2. Decrement (or delete) position
-                new_qty = pos_row["qty"] - qty
-                if new_qty < 1e-9:
-                    # Full sell — remove the row
-                    await db.execute(
-                        "DELETE FROM positions WHERE account_id = ? AND ticker = ?",
-                        (account_id, ticker),
-                    )
-                else:
-                    await db.execute(
-                        "UPDATE positions SET qty = ? WHERE account_id = ? AND ticker = ?",
-                        (new_qty, account_id, ticker),
-                    )
-
-                # 3. Insert order record
+                # Insert order record
                 await db.execute(
                     """
                     INSERT INTO orders (

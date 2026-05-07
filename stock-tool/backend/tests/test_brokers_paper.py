@@ -2,9 +2,17 @@
 and PaperBrokerAdapter behaviour tests (Task 3).
 """
 import pytest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from database import init_db, get_db
 from config import settings
+
+# A "market open" datetime used by all Task-3 tests to ensure market-hours
+# logic does not interfere: Wednesday 2026-06-03 14:00 ET (US market open).
+_ET = ZoneInfo("America/New_York")
+_MARKET_OPEN_NOW = datetime(2026, 6, 3, 14, 0, tzinfo=_ET)
+_MARKET_CLOSED_NOW = datetime(2026, 6, 3, 3, 0, tzinfo=_ET)   # 03:00 ET — pre-market
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +107,7 @@ from models import OrderRequest
 @pytest.mark.asyncio
 async def test_buy_market_with_sufficient_cash():
     """After a market buy, cash decremented exactly, positions row created, order=filled."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 150.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 150.0, now_provider=lambda: _MARKET_OPEN_NOW)
     order = await adapter.place_order(
         "default",
         OrderRequest(ticker="AAPL", side="buy", order_type="market", qty=10),
@@ -129,7 +137,7 @@ async def test_buy_market_with_sufficient_cash():
 @pytest.mark.asyncio
 async def test_buy_market_insufficient_cash():
     """Buying more than cash allows raises InsufficientFundsError; DB unchanged."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 200.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 200.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     # 200.0 * 600 = 120_000 > 100_000
     with pytest.raises(InsufficientFundsError):
@@ -151,7 +159,7 @@ async def test_buy_market_insufficient_cash():
 @pytest.mark.asyncio
 async def test_sell_market_with_sufficient_position():
     """After sell, cash increases, position qty decreases, order=filled."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     # First buy 20 shares
     await adapter.place_order(
@@ -187,7 +195,7 @@ async def test_sell_market_with_sufficient_position():
 @pytest.mark.asyncio
 async def test_sell_market_insufficient_position():
     """Selling more than held raises InsufficientPositionError; DB unchanged."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     # Buy 10 shares first
     await adapter.place_order(
@@ -218,7 +226,7 @@ async def test_sell_market_insufficient_position():
 async def test_buy_twice_avg_cost_weighted():
     """Two buys at different prices; avg_cost = (q1*p1 + q2*p2) / (q1+q2)."""
     prices = iter([100.0, 200.0])
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: next(prices))
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: next(prices), now_provider=lambda: _MARKET_OPEN_NOW)
 
     await adapter.place_order(
         "default",
@@ -244,7 +252,7 @@ async def test_buy_twice_avg_cost_weighted():
 @pytest.mark.asyncio
 async def test_sell_all_position_deletes_row():
     """After selling the entire position, the positions row is removed."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 50.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 50.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     await adapter.place_order(
         "default",
@@ -273,7 +281,7 @@ async def test_forex_buy_applies_spread():
     assert is_forex(fx_ticker)
 
     mid_price = 1.1000
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: mid_price)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: mid_price, now_provider=lambda: _MARKET_OPEN_NOW)
 
     order = await adapter.place_order(
         "default",
@@ -297,7 +305,7 @@ async def test_forex_buy_applies_spread():
 @pytest.mark.asyncio
 async def test_stock_buy_no_spread():
     """For a stock, fill_price == current_price (no spread); fee == 0."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 150.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 150.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     order = await adapter.place_order(
         "default",
@@ -319,7 +327,7 @@ async def test_invariant_cash_plus_positions_equals_initial():
     This test uses only stocks to keep the invariant clean.
     """
     price_map = {"AAPL": 150.0, "MSFT": 400.0}
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: price_map[t])
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: price_map[t], now_provider=lambda: _MARKET_OPEN_NOW)
 
     await adapter.place_order(
         "default",
@@ -356,9 +364,12 @@ async def test_invariant_cash_plus_positions_equals_initial():
 async def test_place_limit_order_does_not_mutate_cash_or_positions():
     """Limit order creates a pending row but does NOT change cash or positions."""
     # price_fetcher should NOT be called for limit orders
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: (_ for _ in ()).throw(
-        AssertionError("price_fetcher must not be called for limit orders")
-    ))
+    adapter = PaperBrokerAdapter(
+        price_fetcher=lambda t: (_ for _ in ()).throw(
+            AssertionError("price_fetcher must not be called for limit orders")
+        ),
+        now_provider=lambda: _MARKET_OPEN_NOW,
+    )
 
     order = await adapter.place_order(
         "default",
@@ -389,7 +400,7 @@ async def test_place_limit_order_does_not_mutate_cash_or_positions():
 @pytest.mark.asyncio
 async def test_cancel_pending_limit():
     """Cancelling a pending limit order sets status=cancelled and sets cancelled_at."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     order = await adapter.place_order(
         "default",
@@ -412,7 +423,7 @@ async def test_cancel_pending_limit():
 @pytest.mark.asyncio
 async def test_cancel_filled_order_raises():
     """Trying to cancel a filled order raises InvalidOrderError."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     order = await adapter.place_order(
         "default",
@@ -430,7 +441,7 @@ async def test_cancel_filled_order_raises():
 @pytest.mark.asyncio
 async def test_cancel_unknown_order_raises():
     """cancel_order with unknown order_id raises OrderNotFoundError."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     with pytest.raises(OrderNotFoundError):
         await adapter.cancel_order("default", "nonexistent-order-id-xyz")
@@ -449,7 +460,7 @@ async def test_invalid_order_qty_zero_raises():
 @pytest.mark.asyncio
 async def test_invalid_limit_order_missing_limit_price():
     """limit order without limit_price raises InvalidOrderError from adapter."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     with pytest.raises(InvalidOrderError):
         await adapter.place_order(
@@ -464,7 +475,7 @@ async def test_invalid_limit_order_missing_limit_price():
 @pytest.mark.asyncio
 async def test_invalid_order_type_raises():
     """Unknown order_type raises InvalidOrderError."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     with pytest.raises(InvalidOrderError):
         await adapter.place_order(
@@ -481,7 +492,7 @@ async def test_invalid_order_type_raises():
 @pytest.mark.asyncio
 async def test_signal_snapshot_persisted():
     """signal_snapshot fields are written to the order record."""
-    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0)
+    adapter = PaperBrokerAdapter(price_fetcher=lambda t: 100.0, now_provider=lambda: _MARKET_OPEN_NOW)
 
     snapshot = {
         "label_short": "强看涨",
@@ -500,3 +511,92 @@ async def test_signal_snapshot_persisted():
     assert order.signal_score_short == 4
     assert order.signal_label_long == "中性"
     assert order.signal_score_long == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — closed-market queueing tests (Piece A)
+# ---------------------------------------------------------------------------
+
+# ── 16. test_market_buy_for_stock_outside_hours_queues ───────────────────────
+
+@pytest.mark.asyncio
+async def test_market_buy_for_stock_outside_hours_queues():
+    """Wednesday 03:00 ET (pre-market) → AAPL market BUY → status=queued, cash unchanged, no position."""
+    adapter = PaperBrokerAdapter(
+        price_fetcher=lambda t: pytest.fail("should not call price_fetcher when queueing"),
+        now_provider=lambda: _MARKET_CLOSED_NOW,
+    )
+
+    order = await adapter.place_order(
+        "default",
+        OrderRequest(ticker="AAPL", side="buy", order_type="market", qty=10),
+        signal_snapshot=None,
+    )
+
+    assert order.status == "queued"
+    assert order.fill_price is None
+    assert order.fill_qty is None
+    assert order.ticker == "AAPL"
+    assert order.side == "buy"
+
+    # Cash must be unchanged
+    account = await adapter.get_account("default")
+    assert account.cash_balance == settings.paper_initial_cash
+
+    # No position should be created
+    positions = await adapter.get_positions("default")
+    assert len(positions) == 0
+
+
+# ── 17. test_market_buy_for_forex_outside_hours_fills ────────────────────────
+
+@pytest.mark.asyncio
+async def test_market_buy_for_forex_outside_hours_fills():
+    """Wednesday 03:00 ET → EURUSD=X market BUY → fills immediately (FX never queued)."""
+    mid_price = 1.1000
+    adapter = PaperBrokerAdapter(
+        price_fetcher=lambda t: mid_price,
+        now_provider=lambda: _MARKET_CLOSED_NOW,
+    )
+
+    order = await adapter.place_order(
+        "default",
+        OrderRequest(ticker="EURUSD=X", side="buy", order_type="market", qty=1000),
+        signal_snapshot=None,
+    )
+
+    assert order.status == "filled"
+    assert order.fill_price is not None
+    assert order.fill_price > 0
+
+    # Position should be created
+    positions = await adapter.get_positions("default")
+    fx_positions = [p for p in positions if p.ticker == "EURUSD=X"]
+    assert len(fx_positions) == 1
+    assert abs(fx_positions[0].qty - 1000) < 1e-9
+
+
+# ── 18. test_queued_buy_does_not_call_price_fetcher ──────────────────────────
+
+@pytest.mark.asyncio
+async def test_queued_buy_does_not_call_price_fetcher():
+    """When a stock market order is queued (closed market), price_fetcher is NOT called."""
+    called = []
+
+    def strict_price_fetcher(ticker: str) -> float:
+        called.append(ticker)
+        pytest.fail(f"price_fetcher was called with ticker={ticker!r} but should not be")
+
+    adapter = PaperBrokerAdapter(
+        price_fetcher=strict_price_fetcher,
+        now_provider=lambda: _MARKET_CLOSED_NOW,
+    )
+
+    order = await adapter.place_order(
+        "default",
+        OrderRequest(ticker="AAPL", side="buy", order_type="market", qty=5),
+        signal_snapshot=None,
+    )
+
+    assert order.status == "queued"
+    assert called == [], "price_fetcher must not have been called"
