@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建响应式 Next.js Web 应用，包含仪表盘、机会发现、品种详情和提醒管理四个页面，支持手机浏览器访问。
+**Goal:** 构建响应式 Next.js Web 应用，包含仪表盘、机会发现、品种详情、提醒管理和**虚拟交易**五大功能区，支持手机浏览器访问。
+
+> **2026-05-06 修订：** 追加虚拟交易 UI（Task 9–10），并在 Task 4（仪表盘）和 Task 6（详情页）中加入持仓与下单入口。下方文件结构已同步更新；既有任务的 Step 中如涉及对应改动，参见末尾「修订说明」一节。
 
 **Architecture:** Next.js 15 App Router，Tailwind CSS 样式，Recharts 折线图，JWT token 存入 localStorage，API 调用后端 FastAPI（Plan 1）。所有页面服务端无需认证，认证在客户端中间件处理。
 
@@ -24,7 +26,10 @@ stock-tool/frontend/
 │   ├── opportunities/page.tsx # 机会发现（扫描结果列表）
 │   ├── symbol/[ticker]/
 │   │   └── page.tsx           # 品种详情页
-│   └── alerts/page.tsx        # 提醒管理页
+│   ├── alerts/page.tsx        # 提醒管理页
+│   └── portfolio/
+│       ├── page.tsx           # 持仓总览页（Task 9）
+│       └── orders/page.tsx    # 交易历史页（Task 10）
 ├── components/
 │   ├── SignalBadge.tsx         # 信号标签（颜色 + 文字）
 │   ├── SignalCard.tsx          # 卡片（一览用）
@@ -32,7 +37,12 @@ stock-tool/frontend/
 │   ├── PriceChart.tsx          # 30天折线图
 │   ├── FilterBar.tsx           # 筛选栏（市场/信号类型/排序）
 │   ├── SignalDetail.tsx        # 短期/长期信号详情块
-│   └── NavBar.tsx              # 顶部导航栏
+│   ├── NavBar.tsx              # 顶部导航栏
+│   ├── PortfolioSummary.tsx    # 仪表盘上的持仓摘要卡（Task 4 修订）
+│   ├── PositionCard.tsx        # 单条持仓卡片（Task 9）
+│   ├── NavChart.tsx            # 净值曲线（Task 9）
+│   ├── OrderModal.tsx          # 下单弹窗（Task 6 修订）
+│   └── OrderRow.tsx            # 订单历史单行（Task 10）
 ├── lib/
 │   ├── types.ts                # TypeScript 接口定义
 │   ├── api.ts                  # API 客户端（封装 fetch）
@@ -1389,3 +1399,182 @@ git commit -m "feat: Web Push service worker registration"
 ---
 
 前端实现完成。访问 http://localhost:3000 可使用完整功能。
+
+---
+
+## Task 9: 持仓总览页（虚拟交易）
+
+**前置：** Plan 1.5 已完成（后端 `/portfolio/*` 端点可用）
+
+**Files:**
+- Create: `stock-tool/frontend/app/portfolio/page.tsx`
+- Create: `stock-tool/frontend/components/PositionCard.tsx`
+- Create: `stock-tool/frontend/components/NavChart.tsx`
+- Create: `stock-tool/frontend/components/PortfolioSummary.tsx`
+- Modify: `stock-tool/frontend/components/NavBar.tsx`（追加「持仓」入口）
+- Modify: `stock-tool/frontend/lib/types.ts`（追加 Account/Position/NavPoint/Order 接口）
+- Modify: `stock-tool/frontend/lib/api.ts`（追加 portfolio 相关函数）
+
+- [ ] **Step 1: 在 lib/types.ts 追加类型**
+
+```ts
+export interface Account {
+  id: string
+  type: "paper" | "real"
+  display_name: string
+  initial_cash: number
+  cash_balance: number
+}
+
+export interface Position {
+  ticker: string
+  qty: number
+  avg_cost: number
+  current_price: number
+  market_value: number
+  unrealized_pnl: number
+  unrealized_pnl_pct: number
+  signal_label_short: string | null
+}
+
+export interface NavPoint {
+  date: string
+  cash: number
+  market_value: number
+  total_value: number
+}
+
+export interface Order {
+  id: string
+  ticker: string
+  side: "buy" | "sell"
+  order_type: "market" | "limit"
+  qty: number
+  limit_price: number | null
+  status: "queued" | "pending" | "filled" | "cancelled" | "rejected"
+  fill_price: number | null
+  fee: number
+  signal_label_short: string | null
+  signal_score_short: number | null
+  triggered_by: "manual" | "recommendation"
+  created_at: string
+  filled_at: string | null
+}
+```
+
+- [ ] **Step 2: lib/api.ts 追加函数**
+
+`getAccount()`、`getPositions()`、`getNavHistory(days)`、`getOrders(filter)`、`placeOrder(req)`、`cancelOrder(id)`、`getPerformance()`
+
+- [ ] **Step 3: PortfolioSummary 组件**
+
+显示 4 个数字：现金、持仓市值、总净值、累计盈亏（金额 + 百分比着色）
+
+- [ ] **Step 4: NavChart 组件（基于 Recharts）**
+
+读取 nav-history 数组，画 total_value 折线图；x 轴日期、y 轴美元，hover 显示当日详细。
+
+- [ ] **Step 5: PositionCard 组件**
+
+每条持仓显示：品种代码、当前价、数量、平均成本、浮动盈亏（红绿）、当前短期信号标签、跳转详情按钮
+
+- [ ] **Step 6: portfolio/page.tsx 主页面**
+
+布局（移动端单列、桌面双列）：
+1. 顶部 PortfolioSummary
+2. 中部 NavChart（默认 90 天）
+3. 下方 PositionCard 列表，按市值降序
+
+加载态 skeleton + 空状态提示（「暂无持仓，去[机会发现](/opportunities)挑一个？」）
+
+- [ ] **Step 7: NavBar 追加入口**
+
+在「机会发现」与「提醒」之间插入「持仓」链接。
+
+- [ ] **Step 8: 验证**
+
+```
+1. 后端跑一笔买单（curl 或下个 task 完成后从 UI）
+2. 访问 /portfolio → 看到持仓卡片与摘要
+3. 检查响应式：缩到 360px 宽度无水平滚动
+```
+
+- [ ] **Step 9: Commit**
+
+---
+
+## Task 10: 下单弹窗 + 交易历史页（虚拟交易）
+
+**Files:**
+- Create: `stock-tool/frontend/components/OrderModal.tsx`
+- Create: `stock-tool/frontend/components/OrderRow.tsx`
+- Create: `stock-tool/frontend/app/portfolio/orders/page.tsx`
+- Modify: `stock-tool/frontend/app/symbol/[ticker]/page.tsx`（追加「虚拟下单」按钮触发 OrderModal）
+- Modify: `stock-tool/frontend/components/NavBar.tsx`（持仓页内副导航/Tabs 切换至「交易历史」）
+
+- [ ] **Step 1: OrderModal 组件**
+
+入参：`ticker`、`currentPrice`、当前 short/long 信号（用于显示快照预览）。
+
+表单：
+- 方向（买/卖，单选按钮）
+- 订单类型（市价/限价，单选按钮）
+- 数量（数字输入）
+- 限价价格（仅限价单显示）
+- 显示「下单时记录的信号快照」（只读，源自父组件传入）
+- 显示可用现金 + 最大可买数量
+- 美股闭市时段提示「将在下次开盘后排队成交」（基于客户端推算 ET 时间）
+- 提交按钮 → 二次确认弹窗 → POST `/portfolio/accounts/default/orders` → 成功后刷新父页面 + toast
+
+校验：数量 > 0；卖出数量 ≤ 当前持仓；限价 > 0。
+
+- [ ] **Step 2: 详情页接入 OrderModal**
+
+在 `app/symbol/[ticker]/page.tsx` 现有「加入自选 / 深度分析」按钮旁边新增「💼 虚拟下单」按钮，点击打开 OrderModal。
+
+> **机会发现页（Task 5）不放下单按钮**——按用户决策仅详情页可下单。
+
+- [ ] **Step 3: OrderRow 组件**
+
+时间线行：
+- 状态徽章（已成交绿、待成交黄、已取消灰、被拒红）
+- 时间、品种、方向、数量、价格、费用
+- 信号快照标签（如有）
+- 「取消」按钮（仅 queued/pending 显示）
+
+- [ ] **Step 4: portfolio/orders/page.tsx 历史页**
+
+- 顶部筛选：状态、订单类型、信号类型、方向
+- 列表分页（每页 50 条，向下滚动加载更多）
+- 取消按钮调用 DELETE 端点
+
+- [ ] **Step 5: 持仓页副导航**
+
+在 `/portfolio` 页面顶部加 Tabs：「持仓」（当前页） / 「交易历史」（跳 `/portfolio/orders`）
+
+- [ ] **Step 6: 验证**
+
+```
+1. 详情页（如 /symbol/AAPL）→ 点「虚拟下单」 → 市价买入 1 股 → 提交
+2. 跳到 /portfolio → 看到 AAPL 持仓
+3. 跳到 /portfolio/orders → 看到这笔 filled 订单
+4. 在详情页下一笔限价卖出 → 跳到 orders 页 → 看到 pending → 点取消 → 状态变 cancelled
+5. 测试闭市时段（mock 系统时间或周末）→ 弹窗显示排队提示
+```
+
+- [ ] **Step 7: Commit**
+
+---
+
+## 修订说明（针对 Task 4 / Task 6）
+
+> 这部分**不要新建任务**，在执行 Task 4 和 Task 6 时一并完成对应增量。
+
+### Task 4 修订（仪表盘）
+新增组件 `PortfolioSummary.tsx`（实装在 Task 9 优先完成；Task 4 仅消费），在仪表盘顶部插入「我的虚拟账户」摘要卡：现金 / 总净值 / 今日盈亏。点击跳转 `/portfolio`。
+
+### Task 6 修订（品种详情页）
+- 新增「💼 虚拟下单」按钮，点击触发 `OrderModal`（实装在 Task 10）
+- 当用户在该标的已有持仓时，在「价格走势图」下方显示一行迷你持仓信息（数量、平均成本、浮动盈亏）
+
+> 若 Task 4 / Task 6 实施时 Task 9 / Task 10 还未完成，**先把按钮和摘要卡用空状态占位（disabled + 「即将上线」tooltip）**，并在对应组件就绪后回填。
