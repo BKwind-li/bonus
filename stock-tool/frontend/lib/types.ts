@@ -66,3 +66,71 @@ export interface AlertHistoryItem {
   triggered_at: string
   read: boolean
 }
+
+// ── Virtual Trading / Portfolio ─────────────────────────────────────────────
+
+export interface Account {
+  id: string
+  name: string
+  cash_balance: number
+  initial_cash: number
+  created_at: string
+}
+
+export interface Position {
+  ticker: string
+  name: string
+  qty: number
+  avg_cost: number
+  current_price: number
+  market_value: number
+  unrealized_pnl: number
+  unrealized_pnl_pct: number
+  signal_label_short?: string
+  signal_color_short?: "green" | "yellow" | "red"
+}
+
+export interface NavPoint {
+  date: string
+  cash: number
+  market_value: number
+  total_value: number
+}
+
+export interface Order {
+  id: string
+  account_id: string
+  ticker: string
+  side: "buy" | "sell"
+  order_type: "market" | "limit"
+  qty: number
+  limit_price?: number
+  status: "pending" | "filled" | "cancelled" | "rejected"
+  filled_price?: number
+  filled_at?: string
+  created_at: string
+}
+
+export interface PlaceOrderRequest {
+  ticker: string
+  side: "buy" | "sell"
+  order_type: "market" | "limit"
+  qty: number
+  limit_price?: number
+}
+
+export interface OrderFilter {
+  status?: string
+  side?: string
+  limit?: number
+}
+
+export interface Performance {
+  total_trades: number
+  total_buys: number
+  total_sells: number
+  total_return_pct: number
+  realized_pnl: number
+  unrealized_pnl: number
+  signal_win_rate: number
+}

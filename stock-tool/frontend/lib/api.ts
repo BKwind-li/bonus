@@ -1,4 +1,13 @@
 import { getToken } from "./auth"
+import type {
+  Account,
+  Position,
+  NavPoint,
+  Order,
+  PlaceOrderRequest,
+  OrderFilter,
+  Performance,
+} from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -48,4 +57,25 @@ export const api = {
   getAlertHistory: () => request<any[]>("/alerts/history"),
   getUnreadCount: () => request<{ count: number }>("/alerts/unread-count"),
   markAlertRead: (id: number) => request(`/alerts/history/${id}/read`, { method: "POST" }),
+
+  // ── Virtual Trading / Portfolio ───────────────────────────────────────────
+  getAccount: (id: string) =>
+    request<Account>(`/portfolio/accounts/${id}`),
+  getPositions: (id: string) =>
+    request<Position[]>(`/portfolio/accounts/${id}/positions`),
+  getNavHistory: (id: string, days = 90) =>
+    request<NavPoint[]>(`/portfolio/accounts/${id}/nav-history?days=${days}`),
+  getOrders: (id: string, filter: OrderFilter = {}) => {
+    const q = new URLSearchParams(filter as Record<string, string>).toString()
+    return request<Order[]>(`/portfolio/accounts/${id}/orders${q ? "?" + q : ""}`)
+  },
+  placeOrder: (id: string, req: PlaceOrderRequest) =>
+    request<Order>(`/portfolio/accounts/${id}/orders`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+  cancelOrder: (id: string, orderId: string) =>
+    request<Order>(`/portfolio/accounts/${id}/orders/${orderId}`, { method: "DELETE" }),
+  getPerformance: (id: string) =>
+    request<Performance>(`/portfolio/accounts/${id}/performance`),
 }

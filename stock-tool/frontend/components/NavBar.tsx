@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 const links = [
   { href: "/dashboard", label: "仪表盘" },
   { href: "/opportunities", label: "机会发现" },
+  { href: "/portfolio", label: "持仓" },
   { href: "/alerts", label: "提醒" },
 ]
 
