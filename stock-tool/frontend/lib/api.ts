@@ -21,7 +21,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers })
   if (res.status === 401) {
-    window.location.href = "/login"
+    // Avoid redirect loop when an /auth/login call itself returns 401, or when
+    // some background fetch on /login fires before the user has a token.
+    if (
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/login")
+    ) {
+      window.location.href = "/login"
+    }
     throw new Error("Unauthorized")
   }
   if (!res.ok) throw new Error(await res.text())

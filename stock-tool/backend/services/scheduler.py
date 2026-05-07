@@ -96,6 +96,11 @@ def start_scheduler():
 
 
 def stop_scheduler():
-    """Shutdown scheduler. Safe to call when scheduler is not running."""
+    """Shutdown scheduler. Safe to call when scheduler is not running.
+
+    Uses wait=False so that long-running scan jobs (yfinance fetches in
+    asyncio.to_thread) don't block Ctrl+C. Pending jobs are abandoned;
+    they'll re-run on the next scheduler start.
+    """
     if scheduler.running:
-        scheduler.shutdown()
+        scheduler.shutdown(wait=False)
