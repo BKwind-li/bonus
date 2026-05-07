@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import init_db
-from routers import auth, watchlist, scanner, alerts, analysis
+from routers import auth, watchlist, scanner, alerts, analysis, portfolio
 from services.scheduler import start_scheduler, stop_scheduler
 
 
@@ -29,6 +29,7 @@ app.include_router(watchlist.router, prefix="/watchlist", tags=["watchlist"])
 app.include_router(scanner.router, prefix="/scanner", tags=["scanner"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 app.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
+app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 
 
 @app.get("/health")

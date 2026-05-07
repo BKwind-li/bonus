@@ -1,11 +1,14 @@
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from models import SignalResult
 from services.data_fetcher import fetch_ohlcv, OHLCVData
 from services.indicator_engine import calculate_indicators
 from services.signal_engine import compute_short_term, compute_long_term
 from data.universe import get_all_tickers, is_forex
+
+logger = logging.getLogger(__name__)
 
 
 def build_signal_result(
@@ -45,13 +48,16 @@ def scan_single(ticker: str, name: str, sector: str, market: str) -> SignalResul
 async def run_full_scan(db) -> int:
     """Scan all universe assets, persist results to DB. Returns count of successful scans.
 
-    Also triggers price + signal alert checks per ticker (handled by services/notifier).
+    Also triggers price + signal alert checks per ticker (handled by services/notifier),
+    and calls the order matcher with the freshly scanned prices.
     """
-    # Lazy imports to avoid circular import issues with notifier
+    # Lazy imports to avoid circular import issues
     from services.notifier import check_price_alerts, check_signal_alerts
 
     tickers = get_all_tickers()
     count = 0
+    current_prices: dict[str, float] = {}
+
     for item in tickers:
         ticker = item["ticker"]
         try:
@@ -80,6 +86,12 @@ async def run_full_scan(db) -> int:
                     result.scanned_at.isoformat(),
                 ),
             )
+            # Commit scan result before opening new DB connections in notifiers
+            await db.commit()
+
+            # Accumulate price for order-matcher pass below
+            current_prices[ticker] = result.price
+
             rsi_raw = next(
                 (float(ind.raw_value) for ind in result.short_term.indicators if ind.name == "RSI(14)"),
                 50.0,
@@ -92,5 +104,25 @@ async def run_full_scan(db) -> int:
         except Exception as exc:
             print(f"[Scanner] {ticker} failed: {exc}")
             continue
-    await db.commit()
+
+    # ── Order matcher pass ──────────────────────────────────────────────────
+    # Run the matcher against prices collected in this scan cycle.  Wrapped in
+    # try/except so a matcher failure never prevents scan results from being
+    # returned to the caller.
+    try:
+        from services.order_matcher import match_open_orders
+        from services.notifier import notify_order_filled, notify_order_rejected
+        from brokers.registry import paper_adapter
+
+        changed_orders = await match_open_orders(
+            paper_adapter, current_prices, datetime.now(timezone.utc)
+        )
+        for order in changed_orders:
+            if order.status == "filled":
+                await notify_order_filled(order)
+            elif order.status == "rejected":
+                await notify_order_rejected(order)
+    except Exception as exc:
+        logger.warning("[Scanner] Order matcher failed (scan results intact): %s", exc)
+
     return count

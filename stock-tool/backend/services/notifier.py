@@ -3,6 +3,7 @@ from email.mime.text import MIMEText
 from datetime import datetime, timezone
 from config import settings
 from database import get_db
+from models import Order
 
 
 async def send_email(subject: str, body: str) -> None:
@@ -126,3 +127,21 @@ async def check_signal_alerts(
             ),
         )
         await db.commit()
+
+
+async def notify_order_filled(order: Order) -> None:
+    """Record + email when an order transitions to filled (via matcher)."""
+    side_zh = "买入" if order.side == "buy" else "卖出"
+    type_zh = "市价" if order.order_type == "market" else "限价"
+    msg = (
+        f"{order.ticker} {side_zh}订单已成交: {order.fill_qty} @ {order.fill_price} "
+        f"({type_zh}单)"
+    )
+    await record_and_notify(order.ticker, "order_filled", msg)
+
+
+async def notify_order_rejected(order: Order) -> None:
+    """Record + email when an order is rejected by the matcher."""
+    side_zh = "买入" if order.side == "buy" else "卖出"
+    msg = f"{order.ticker} {side_zh}订单被拒"
+    await record_and_notify(order.ticker, "order_rejected", msg)
