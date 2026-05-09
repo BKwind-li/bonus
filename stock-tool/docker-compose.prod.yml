@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  nginx:
+    volumes:
+      - ./nginx/nginx-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt:ro
+    ports:
+      - "80:80"
+      - "443:443"
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  certbot_certs:
