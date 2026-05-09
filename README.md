@@ -1,269 +1,279 @@
 # 股票投资辅助工具
 
-一个智能的个人股票和外汇投资助手，帮助你发现投资机会、监控自选标的异常信号，并通过邮件和 Web 通知及时提醒。
+个人股票 + 外汇投资辅助 Web 工具：自动扫描行情、给出中文化的多空信号，并提供**虚拟账户**让你在投入真金白银前先验证策略有效性。
+
+> **项目状态：** ✅ 后端 + 虚拟交易 + 前端 + Docker 部署 全部完成；可本机开发或 VPS 上 HTTPS 上线。
+
+---
 
 ## 核心特性
 
-### 📊 智能信号生成
-- **短期信号**（日线/小时线）：基于 EMA、RSI、MACD、成交量等指标，回答"现在进场时机好不好？"
-- **长期信号**（日线/周线）：基于 EMA 金叉/死叉、周线 RSI 等，回答"大方向是涨还是跌？"
-- **统一评分系统**：-4 分（强烈看跌）到 +4 分（强烈看涨）
-- **中文结论**：用户只看投资建议，无需理解技术指标细节
+### 🔍 智能信号生成
+- **短期信号**（日线 + 小时线）：EMA20/50、RSI(14)、MACD、成交量 — 回答「现在进场时机好不好？」
+- **长期信号**（日线 + 周线）：EMA50/200 金叉死叉、价格 vs EMA200、长期趋势斜率、周线 RSI — 回答「大方向是涨还是跌？」
+- **统一评分**：-4（强烈看跌）到 +4（强烈看涨），中文标签直接告诉你结论
+- **缺失数据中性处理**：当某些指标因数据不足无法计算时贡献 0（中性），不再像旧版本一样默认偏空
 
-### 🔍 机会发现
-- 自动扫描标普 500 成分股 + 20 个主要外汇对
-- 按信号强度排序，快速识别投资机会
-- 实时价格和涨跌幅展示
+### 📊 机会发现
+- 自动扫描 38 只标普 500 蓝筹股 + 20 个主要外汇对
+- 按短期 / 长期信号强度排序
+- 美股每个交易日收盘后扫描（21:05 UTC），外汇每 4 小时扫描一次
+- 支持手动「立即扫描」按钮，前端轮询完成自动刷新
 
-### 📱 自选监控
-- 添加关注的品种到自选列表
-- 异常信号实时高亮提醒
-- 支持价格预警和信号变动通知
+### 📌 自选监控 + 异常告警
+- 自选标的的异常信号（评分跳变、强烈信号、RSI 超买超卖）触发邮件 + Web Push 通知
+- 通知历史 30 条；未读角标实时显示
 
-### 🔔 智能通知
-- **邮件通知**：关键信号变化及时发送
-- **Web Push**：浏览器桌面提醒
-- **通知历史**：记录所有提醒记录
+### 💼 虚拟交易（核心新功能）
+- $100,000 默认虚拟账户，**支持市价 + 限价单**
+- 闭市时段下美股订单会排队，下次开盘自动成交
+- 外汇 24h 即时成交，含 0.5 pip 模拟点差
+- 每张订单自动记录下单时的信号快照（label + score），便于回看「按信号下单的胜率」
+- 持仓总览页：现金 / 市值 / 累计盈亏 / 净值曲线
+- 可信架构：`BrokerAdapter` 抽象层让未来接入真实经纪商（Alpaca、IB）零成本切换
 
 ### 🤖 深度分析（可选）
-- 集成 Claude AI，生成 200 字中文投资分析
-- 按需调用，帮助理解市场动态
+- 集成 Anthropic Claude API，按需生成约 200 字中文投资分析
+- 不开 key 也不影响其他功能（API 返回 501）
 
-## 项目架构
-
-```
-stock-tool/
-├── backend/                     # Python FastAPI 后端
-│   ├── routers/                # API 路由
-│   │   ├── auth.py            # 用户认证
-│   │   ├── watchlist.py       # 自选管理
-│   │   ├── scanner.py         # 机会扫描
-│   │   ├── alerts.py          # 通知管理
-│   │   └── analysis.py        # 品种分析
-│   ├── services/              # 业务逻辑
-│   │   ├── data_fetcher.py    # yfinance 行情获取
-│   │   ├── indicator_engine.py # 技术指标计算
-│   │   ├── signal_engine.py   # 信号评分规则引擎
-│   │   ├── scanner_service.py # 批量扫描服务
-│   │   ├── notifier.py        # 邮件通知
-│   │   └── scheduler.py       # 定时任务
-│   ├── data/
-│   │   └── universe.py        # 资产池（S&P500 + FX）
-│   ├── tests/                 # 单元测试
-│   ├── main.py               # FastAPI 入口
-│   ├── config.py             # 配置管理
-│   ├── database.py           # SQLite 操作
-│   └── models.py             # 数据模型
-└── docs/                      # 设计文档
-    ├── specs/                # 项目规格说明
-    └── plans/                # 实现计划
-```
+---
 
 ## 技术栈
 
-| 层级 | 技术 |
-|-----|------|
-| **后端** | Python 3.11+ / FastAPI |
-| **前端** | Next.js + Tailwind CSS（待实现） |
-| **数据库** | SQLite（本地单用户） |
-| **行情数据** | yfinance（美股 + 外汇，15分钟延迟） |
-| **指标计算** | pandas-ta |
-| **定时任务** | APScheduler |
-| **通知** | SMTP 邮件 + Web Push |
-| **AI 分析** | Claude API（可选） |
-| **部署** | Docker Compose + nginx |
+| 层 | 选型 |
+|---|---|
+| **后端** | Python 3.11 / FastAPI 0.115 / aiosqlite / APScheduler |
+| **数据源** | yfinance（免费，约 15 分钟延迟）+ 自带 query2 直连降级 |
+| **指标** | pandas-ta-classic |
+| **认证** | JWT (HS256, 30 天) + 单密码登录 |
+| **前端** | Next.js 16 (App Router) / React 19 / TypeScript / Tailwind v4 / Recharts |
+| **数据库** | SQLite |
+| **部署** | Docker Compose + nginx + Let's Encrypt 自动续期 |
+| **可选 AI** | Anthropic Claude API |
+
+---
 
 ## 快速开始
 
-### 环境要求
-- Python 3.11+
-- pip 或 conda
+### 路径 A：本机开发（最快）
 
-### 后端安装
+需要 Python 3.11+ 与 Node.js 20+。
+
+**后端**
 
 ```bash
-# 进入后端目录
 cd stock-tool/backend
-
-# 创建虚拟环境（推荐）
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
+.\venv\Scripts\activate     # Windows
+# source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 
-# 复制配置文件
-cp .env.example .env
+# 准备 .env（最少两项）
+echo "APP_PASSWORD=你的密码" > .env
+# 用 PowerShell 生成 64 字符 SECRET_KEY 加到 .env
+# -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 64 | % {[char]$_})
 
-# 编辑 .env 文件，配置邮件服务、Claude API 密钥等
-# SMTP_SERVER=smtp.gmail.com
-# SMTP_PORT=587
-# SMTP_USER=your-email@gmail.com
-# SMTP_PASSWORD=your-app-password
-# CLAUDE_API_KEY=sk-...
-
-# 初始化数据库
-python main.py  # 首次运行时自动初始化
-
-# 开发模式启动（支持热重载）
 uvicorn main:app --reload --port 8000
 ```
 
-访问 API 文档：http://localhost:8000/docs
+后端起来后 `http://localhost:8000/health` 应返回 `{"status":"ok"}`，API 文档在 `/docs`。
 
-### 前端安装（待实现）
+**前端**（另开一个终端）
 
 ```bash
 cd stock-tool/frontend
-
 npm install
-npm run dev  # 开发模式，访问 http://localhost:3000
+npm run dev
 ```
 
-## API 主要端点
+浏览器打开 `http://localhost:3000` → 自动跳到 `/login` → 输入 `APP_PASSWORD` → 进入 dashboard。
 
-### 认证
-- `POST /auth/login` - 用户登录
-- `POST /auth/logout` - 用户登出
+### 路径 B：Docker 本机集成测试
 
-### 自选管理
-- `GET /watchlist` - 获取自选列表
-- `POST /watchlist` - 添加自选品种
-- `DELETE /watchlist/{ticker}` - 删除自选品种
+需要 Docker Desktop。
 
-### 机会扫描
-- `GET /scanner/results` - 获取最新扫描结果
-- `POST /scanner/trigger` - 手动触发扫描
+```bash
+cd stock-tool
+cp .env.example .env
+# 编辑 .env，至少填写 APP_PASSWORD 和 SECRET_KEY
 
-### 通知管理
-- `GET /alerts/price` - 获取价格提醒
-- `POST /alerts/price` - 创建价格提醒
-- `GET /alerts/signal` - 获取信号提醒
-- `POST /alerts/signal` - 创建信号提醒
-- `GET /alerts/history` - 获取通知历史
+docker compose up --build -d
+```
 
-### 品种分析
-- `GET /analysis/{ticker}` - 获取品种信号分析
-- `POST /analysis/{ticker}/deep` - 获取 AI 深度分析
+访问 `http://localhost`（nginx 反代）即可。
 
-## 核心功能说明
+### 路径 C：VPS 部署 + HTTPS
 
-### 信号评分系统
+参见 [`stock-tool/DEPLOYMENT.md`](stock-tool/DEPLOYMENT.md) — 包含 Ubuntu VPS 安装 Docker、上传项目、Let's Encrypt 证书、HTTPS 切换、维护与故障排查的完整 runbook。
 
-| 分值范围 | 信号标签 | 含义 |
-|---------|---------|------|
-| +3 ~ +4 | 🟢 强烈看涨 | 多个强势买入信号，短期买点明确 |
-| +1 ~ +2 | 🟢 看涨信号 | 偏向上升，可考虑布局 |
-| 0 | 🟡 中性观望 | 信号混乱，建议暂观望 |
-| -1 ~ -2 | 🔴 看跌信号 | 偏向下降，谨慎操作 |
-| -3 ~ -4 | 🔴 强烈看跌 | 多个卖出信号，短期风险大 |
+---
 
-### 技术指标
+## 项目结构
 
-**短期指标（日线 + 小时线）**
-- EMA (20/50)：趋势方向
-- RSI (14)：超买超卖
-- MACD：动能指标
-- 成交量：资金参与度
+```
+stock-tool/
+├── backend/                       # FastAPI 后端
+│   ├── routers/                  # HTTP 路由
+│   │   ├── auth.py              # 单密码登录 + JWT
+│   │   ├── watchlist.py         # 自选 CRUD
+│   │   ├── scanner.py           # 扫描结果查询 + 触发
+│   │   ├── alerts.py            # 价格/信号提醒 CRUD + 历史
+│   │   ├── analysis.py          # 单标的指标 + 深度分析
+│   │   └── portfolio.py         # 虚拟账户 + 订单 + NAV
+│   ├── services/
+│   │   ├── data_fetcher.py      # yfinance + query2 双路径
+│   │   ├── indicator_engine.py  # EMA/RSI/MACD/成交量
+│   │   ├── signal_engine.py     # 评分规则 + 中文模板
+│   │   ├── scanner_service.py   # 批量扫描 + matcher 触发
+│   │   ├── notifier.py          # SMTP 邮件 + 历史落库
+│   │   ├── scheduler.py         # 3 个 cron job
+│   │   ├── market_hours.py      # 美股开闭市判定
+│   │   ├── order_matcher.py     # 限价/排队订单撮合
+│   │   └── nav_service.py       # 每日净值快照
+│   ├── brokers/
+│   │   ├── base.py              # BrokerAdapter Protocol + 异常类型
+│   │   ├── paper.py             # PaperBrokerAdapter（事务化）
+│   │   └── registry.py          # paper_adapter 单例
+│   ├── data/universe.py         # SP500 + FX 标的池
+│   ├── tests/                   # 143 个单元/集成测试
+│   ├── main.py / config.py / database.py / models.py
+│   └── Dockerfile
+│
+├── frontend/                     # Next.js 16 前端
+│   ├── app/
+│   │   ├── login/               # 登录页
+│   │   ├── dashboard/           # 仪表盘 + 持仓摘要
+│   │   ├── opportunities/       # 机会发现 + 筛选
+│   │   ├── symbol/[ticker]/     # 详情页 + 虚拟下单
+│   │   ├── alerts/              # 价格/信号/历史 三 tab
+│   │   ├── portfolio/           # 持仓总览 + 净值曲线
+│   │   └── portfolio/orders/    # 交易历史 + 取消
+│   ├── components/              # SignalBadge/Card, NavBar, OrderModal 等 17 个
+│   ├── lib/                     # types / api / auth
+│   ├── public/sw.js             # Web Push Service Worker
+│   ├── middleware.ts            # cookie 路由守卫
+│   └── Dockerfile
+│
+├── nginx/
+│   ├── nginx.conf              # HTTP — Let's Encrypt 验证用
+│   └── nginx-ssl.conf          # HTTPS — 含 YOUR_DOMAIN 占位
+│
+├── docker-compose.yml          # 本地基础栈
+├── docker-compose.prod.yml     # HTTPS 叠加 + certbot 自动续期
+├── .env.example                # 配置模板
+└── DEPLOYMENT.md               # 部署 runbook
+```
 
-**长期指标（日线 + 周线）**
-- EMA (50/200)：金叉/死叉
-- RSI (周线)：长期强度
-- 趋势方向判断
+---
 
-## 支持的资产
+## API 端点摘要
 
-### 美股
-- 标普 500 成分股（约 500 种）
+所有受保护路由需要 `Authorization: Bearer <jwt>` header。
 
-### 外汇（主要对 + 交叉盘，约 20 对）
-- EUR/USD、GBP/USD、USD/JPY、USD/CHF
-- AUD/USD、USD/CAD、NZD/USD 等
+| 模块 | 端点 |
+|---|---|
+| **认证** | `POST /auth/login` |
+| **自选** | `GET /watchlist`、`POST /watchlist`、`DELETE /watchlist/{ticker}` |
+| **扫描** | `GET /scanner/results?market=&signal_type=&sort_by=`、`POST /scanner/trigger`、`GET /scanner/last-scan-time` |
+| **分析** | `GET /analysis/{ticker}`、`POST /analysis/{ticker}/deep` |
+| **提醒** | `GET\|POST\|DELETE /alerts/price`、`/alerts/signal`、`GET /alerts/history`、`GET /alerts/unread-count`、`POST /alerts/history/{id}/read` |
+| **虚拟交易** | `GET /portfolio/accounts`、`GET\|POST /portfolio/accounts/{id}/orders`、`DELETE /portfolio/accounts/{id}/orders/{order_id}`、`GET /portfolio/accounts/{id}/positions`、`GET /portfolio/accounts/{id}/nav-history?days=`、`GET /portfolio/accounts/{id}/performance` |
+
+完整 API 自描述文档：启动后端后访问 `http://localhost:8000/docs`。
+
+---
+
+## 信号系统
+
+### 评分映射
+
+| 分值 | 标签 | 含义 |
+|---|---|---|
+| +3 ~ +4 | 🟢 强烈看涨 | 多个强势信号一致；短期买点明确 |
+| +1 ~ +2 | 🟢 看涨信号 | 偏多，可关注 |
+| 0 | 🟡 中性观望 | 信号混杂或数据稀缺；建议观望 |
+| -1 ~ -2 | 🔴 看跌信号 | 偏空，谨慎 |
+| -3 ~ -4 | 🔴 强烈看跌 | 多个卖出信号一致；短期风险高 |
+
+### 4 + 4 指标体系
+
+**短期（日线）：** EMA20 vs EMA50、RSI(14)、MACD(12,26,9)、当日成交量 vs 20 日均量
+
+**长期（日线 + 周线）：** EMA50 vs EMA200、当前价 vs EMA200、EMA200 斜率（20 日）、周线 RSI
+
+每个指标贡献 +1 / -1 / **0（数据不足时中性）**，4 个指标加总即评分。
+
+### 虚拟交易撮合规则
+
+- **市价单**：开市瞬间按当时价成交；闭市时段美股先排队，下次开盘自动成交（外汇 24h 不排队）
+- **限价单**：每轮扫描周期检查（美股 21:05、外汇每 4h），价格穿越限价时按限价成交
+- **手续费**：股票零佣金；外汇买卖各 0.5 pip 点差（`PAPER_FX_SPREAD_PIPS` 可配）
+
+---
+
+## 配置 (.env)
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `APP_PASSWORD` | ✅ | 登录密码 |
+| `SECRET_KEY` | ✅ | JWT 签名密钥（建议 64 字符随机串） |
+| `DATABASE_URL` | | 默认 `./data.db`（容器中通常 `/data/data.db`） |
+| `SMTP_HOST` / `SMTP_PORT` | | 默认 `smtp.gmail.com:587` |
+| `SMTP_USER` / `SMTP_PASS` | | Gmail 应用专用密码（开两步验证后生成） |
+| `NOTIFY_EMAIL` | | 收件邮箱；不配则邮件功能静默跳过 |
+| `CLAUDE_API_KEY` | | 不配则深度分析返回 501，其他功能不受影响 |
+| `PAPER_INITIAL_CASH` | | 默认 100000.0 |
+| `PAPER_FX_SPREAD_PIPS` | | 默认 0.5；设 0 关闭点差 |
+
+完整模板见 `stock-tool/.env.example`。
+
+---
 
 ## 测试
 
 ```bash
-# 进入后端目录
 cd stock-tool/backend
-
-# 运行所有测试
-pytest
-
-# 运行特定测试
-pytest tests/test_indicator_engine.py -v
-
-# 查看覆盖率
-pytest --cov=. tests/
+pytest -q -m "not network"          # 143 个非网络测试，约 10 秒
+pytest -q -m network                # 4 个真实 yfinance 测试（需联网）
 ```
 
-## 配置文件
-
-参考 `backend/.env.example`：
-
-```env
-# 数据库
-DATABASE_URL=sqlite:///./stock_tool.db
-
-# JWT 认证
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# SMTP 邮件
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-NOTIFICATION_EMAIL=your-email@gmail.com
-
-# Claude AI（可选）
-CLAUDE_API_KEY=sk-...
-
-# 定时扫描
-SCAN_INTERVAL_MINUTES=60  # 每小时扫描一次
-
-# 前端 URL
-FRONTEND_URL=http://localhost:3000
-```
-
-## 部署
-
-### Docker 部署
-
-```bash
-# 构建镜像
-docker build -t stock-tool-backend ./backend
-
-# 运行容器
-docker run -p 8000:8000 -e DATABASE_URL=sqlite:///./stock_tool.db stock-tool-backend
-
-# 使用 Docker Compose
-docker-compose up -d
-```
-
-### 生产部署
-
-项目配有 Dockerfile 和 docker-compose.yml，可直接在 VPS 上部署。
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-## 注意事项
-
-⚠️ **重要提示**
-- 此工具仅供参考，不构成投资建议
-- 市场风险，入市需谨慎
-- yfinance 数据有 15 分钟左右的延迟
-- 建议与其他分析工具结合使用
-- 个人资产管理工具，请妥善保管 API 密钥
-
-## 许可证
-
-MIT License
+测试覆盖：schema 迁移、broker 撮合（市价 / 限价 / 排队 / 拒绝 / 信号快照 / 不变量）、市场时段、NAV 快照、portfolio API、扫描器与 matcher 集成、通知录入。
 
 ---
 
-**项目状态**：开发中 🚀  
-**前端**：待实现  
-**后端**：核心功能已完成
+## 文档
+
+- [`docs/superpowers/specs/2026-04-27-stock-investment-tool-design.md`](docs/superpowers/specs/2026-04-27-stock-investment-tool-design.md) — 设计文档（含虚拟交易模块）
+- [`docs/superpowers/plans/2026-04-27-stock-tool-backend.md`](docs/superpowers/plans/2026-04-27-stock-tool-backend.md) — 后端实施计划
+- [`docs/superpowers/plans/2026-05-06-stock-tool-paper-trading-backend.md`](docs/superpowers/plans/2026-05-06-stock-tool-paper-trading-backend.md) — 虚拟交易后端
+- [`docs/superpowers/plans/2026-04-27-stock-tool-frontend.md`](docs/superpowers/plans/2026-04-27-stock-tool-frontend.md) — 前端实施计划
+- [`docs/superpowers/plans/2026-04-27-stock-tool-deployment.md`](docs/superpowers/plans/2026-04-27-stock-tool-deployment.md) — 部署实施计划
+- [`stock-tool/DEPLOYMENT.md`](stock-tool/DEPLOYMENT.md) — **部署 runbook**（本机 Docker 验证 + VPS HTTPS）
+
+---
+
+## 风险提示
+
+⚠️ **本工具仅供个人参考，不构成投资建议。**
+
+- 行情数据来自 yfinance，约 **15 分钟延迟**
+- 信号引擎是规则化的技术指标组合，**不是预测模型**
+- 虚拟交易撮合按延迟价格成交，**与真实交易存在滑点差异**
+- 强烈建议：**先在虚拟账户跑足够长时间**（至少几周），观察策略真实胜率，再考虑接入真实经纪商
+- 妥善保管 `.env`（含密码 / API key）；不要 commit 到 git
+
+---
+
+## 后续规划（已预留接口，未实装）
+
+- **真实经纪商接入**：`BrokerAdapter` 接口已可用；接 Alpaca/IB 仅需新建 `brokers/alpaca.py` 实装协议方法
+- **MCP server**：架构预留为 stdio 内部工具调用；可让 Claude Desktop 直接读取信号、下单
+- **止损订单类型**
+- **更多技术指标**：布林带、ADX、OBV
+- **策略回测**：基于已存的信号快照 + 订单历史
+
+---
+
+## License
+
+MIT
