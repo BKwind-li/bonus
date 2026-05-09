@@ -7,7 +7,7 @@ class IndicatorResult(BaseModel):
     name: str
     raw_value: str
     description: str
-    contribution: int  # +1 or -1
+    contribution: int  # +1 (bullish), -1 (bearish), 0 (no data — neutral, no opinion)
 
 
 class SignalScore(BaseModel):

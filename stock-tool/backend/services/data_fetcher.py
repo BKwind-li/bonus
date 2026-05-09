@@ -77,19 +77,23 @@ def _to_utc(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def fetch_ohlcv(ticker: str) -> "OHLCVData | None":
-    """Fetch 6 months of daily and 2 years of weekly OHLCV for a ticker.
+    """Fetch 2 years of daily and 2 years of weekly OHLCV for a ticker.
+
+    The daily window must be ≥ ~220 trading days for the long-term signal
+    indicators to compute (EMA200 needs 200 bars; EMA200-slope reads back
+    20 bars further). 2 years (~504 trading days) gives ample headroom.
 
     Tries direct Yahoo Finance API first; falls back to yfinance library.
     Returns None if ticker is invalid or insufficient data.
     """
     try:
-        daily = _fetch_via_query2(ticker, "1d", "6mo")
+        daily = _fetch_via_query2(ticker, "1d", "2y")
         weekly = _fetch_via_query2(ticker, "1wk", "2y")
 
         # Fallback to yfinance if either frame is missing (partial rate-limit / transient error)
         if daily.empty or weekly.empty:
             try:
-                daily_fb, weekly_fb = _fetch_via_yfinance(ticker, "6mo", "2y")
+                daily_fb, weekly_fb = _fetch_via_yfinance(ticker, "2y", "2y")
                 if daily.empty:
                     daily = daily_fb
                 if weekly.empty:

@@ -46,7 +46,12 @@ export const api = {
   removeFromWatchlist: (ticker: string) =>
     request(`/watchlist/${ticker}`, { method: "DELETE" }),
   getScanResults: (params?: { market?: string; signal_type?: string; sort_by?: string }) => {
-    const q = new URLSearchParams(params as any).toString()
+    // URLSearchParams stringifies `undefined` as the literal "undefined", which
+    // the backend then matches against a non-existent market. Strip first.
+    const clean = Object.fromEntries(
+      Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== null)
+    ) as Record<string, string>
+    const q = new URLSearchParams(clean).toString()
     return request<any[]>(`/scanner/results${q ? "?" + q : ""}`)
   },
   triggerScan: () => request("/scanner/trigger", { method: "POST" }),
@@ -73,7 +78,12 @@ export const api = {
   getNavHistory: (id: string, days = 90) =>
     request<NavPoint[]>(`/portfolio/accounts/${id}/nav-history?days=${days}`),
   getOrders: (id: string, filter: OrderFilter = {}) => {
-    const q = new URLSearchParams(filter as Record<string, string>).toString()
+    // Same precaution as getScanResults — drop undefined values so the URL
+    // does not contain `?status=undefined&...`.
+    const clean = Object.fromEntries(
+      Object.entries(filter).filter(([, v]) => v !== undefined && v !== null)
+    ) as Record<string, string>
+    const q = new URLSearchParams(clean).toString()
     return request<Order[]>(`/portfolio/accounts/${id}/orders${q ? "?" + q : ""}`)
   },
   placeOrder: (id: string, req: PlaceOrderRequest) =>
