@@ -96,11 +96,32 @@ def test_indicators_have_descriptions():
     score = compute_short_term(vals)
     for ind in score.indicators:
         assert len(ind.description) > 0
-        assert ind.contribution in (-1, 1)
+        assert ind.contribution in (-1, 1)  # all data present → no neutral 0
         assert len(ind.name) > 0
 
 def test_short_term_handles_none_emas():
-    """When EMA data is unavailable, indicator still produces a contribution and description."""
+    """When EMA data is unavailable, indicator contributes 0 (neutral) — not -1."""
     vals = _make_vals(ema_20=None, ema_50=None)
     score = compute_short_term(vals)
     assert len(score.indicators) == 4  # still 4 indicators
+    ema_ind = next(i for i in score.indicators if i.name == "EMA趋势")
+    assert ema_ind.contribution == 0
+    assert "数据不足" in ema_ind.description
+
+
+def test_long_term_missing_data_neutral_not_bearish():
+    """Regression: with EMA200 missing (and dependents), long-term score must NOT
+    skew bearish solely from missing data. Only the genuinely informative
+    indicators (e.g. weekly RSI) contribute.
+
+    Pre-fix: 3 missing × -1 + 1 valid = -3 / -4 → "强烈看跌" — false bearish.
+    Post-fix: 3 missing × 0 + 1 valid = -1 / +1 — honest reflection of partial data.
+    """
+    vals = _make_vals(
+        ema_50=None, ema_200=None, ema_200_slope=None,  # all long-term EMA-based gone
+        rsi_weekly=55,                                  # only this is informative (+1)
+    )
+    score = compute_long_term(vals)
+    # Score is dominated by the one valid indicator, not 3× bearish noise.
+    assert score.score == 1
+    assert score.label == "看涨信号"

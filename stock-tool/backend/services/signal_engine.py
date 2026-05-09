@@ -31,7 +31,7 @@ def compute_short_term(vals: IndicatorValues) -> SignalScore:
         ))
     else:
         indicators.append(IndicatorResult(
-            name="EMA趋势", raw_value="N/A", description="数据不足", contribution=-1,
+            name="EMA趋势", raw_value="N/A", description="数据不足，暂不计入", contribution=0,
         ))
 
     # 2. RSI daily
@@ -55,7 +55,7 @@ def compute_short_term(vals: IndicatorValues) -> SignalScore:
         ))
     else:
         indicators.append(IndicatorResult(
-            name="MACD", raw_value="N/A", description="数据不足", contribution=-1,
+            name="MACD", raw_value="N/A", description="数据不足，暂不计入", contribution=0,
         ))
 
     # 4. Volume
@@ -87,7 +87,7 @@ def compute_long_term(vals: IndicatorValues) -> SignalScore:
         ))
     else:
         indicators.append(IndicatorResult(
-            name="EMA金/死叉", raw_value="N/A", description="数据不足", contribution=-1,
+            name="EMA金/死叉", raw_value="N/A", description="数据不足，暂不计入", contribution=0,
         ))
 
     # 2. Price vs EMA200
@@ -101,7 +101,7 @@ def compute_long_term(vals: IndicatorValues) -> SignalScore:
         ))
     else:
         indicators.append(IndicatorResult(
-            name="价格vs长期均线", raw_value="N/A", description="数据不足", contribution=-1,
+            name="价格vs长期均线", raw_value="N/A", description="数据不足，暂不计入", contribution=0,
         ))
 
     # 3. RSI weekly
@@ -125,7 +125,7 @@ def compute_long_term(vals: IndicatorValues) -> SignalScore:
         ))
     else:
         indicators.append(IndicatorResult(
-            name="长期趋势斜率", raw_value="N/A", description="数据不足", contribution=-1,
+            name="长期趋势斜率", raw_value="N/A", description="数据不足，暂不计入", contribution=0,
         ))
 
     score = sum(ind.contribution for ind in indicators)
